@@ -1,0 +1,25 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+grpcio = "*"
+grpcio-tools = "*"
+protobuf = "*"
+kubernetes = "*"
+jinja2 = "*"
+numpy = "*"
+sustainability-measurement-agent = {ref = "54c58db5a5a610097d0a0bd23f4962b506928dfc", git = "https://github.com/ISE-TU-Berlin/sustainability-measurement-agent"}
+
+[dev-packages]
+ipython = "*"
+ipykernel = "*"
+pandas = "*"
+matplotlib = "*"
+seaborn = "*"
+scipy = "*"
+locust = "*"
+
+[requires]
+python_version = "3.13"

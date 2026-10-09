@@ -1,0 +1,42 @@
+experiment:
+  types: 
+    - name: "baseline"
+      description: "Baseline boutique microservices environment running on Kubernetes with no Wasm components."
+    - name: "wasmtime-vanilla"
+      description: "Boutique microservices but with one stateless wasm service running with the wasmtime shim."
+    - name: "wasmtime-grpc"
+      description: "Boutique microservices running the vanilla service and one additional service comunicating to a downstream service over gRPC using the wasmtime shim unsing a grpc extension."
+    - name: "wasmtime-tcp"
+      description: "Boutique microservices running the grpc service and one additional service comunicating to redis over tcp using the wasmtime shim with a tcp extension." 
+  workload_profiles:
+    - name: "light"
+      users: 200
+      spawn_rate: 1
+    - name: "regular"
+      users: 1000
+      spawn_rate: 2
+    - name: "heavy"
+      users: 2000
+      spawn_rate: 4
+  workload_set:
+    # - name: "light"
+    #   profile: "regular"
+    #   systemStressor: "low"
+    - name: "normal"
+      profile: "regular"
+      systemStressor: "high"
+    # - name: "stressed"
+    #   profile: "heavy"
+    #   systemStressor: "low"
+    - name: "overloaded"
+      profile: "heavy"
+      systemStressor: "medium"
+    # - name: "cleanroom"
+    #   profile: "regular"
+    #   systemStressor: "none"
+    - name: "idle"
+      profile: "light"
+      systemStressor: "low"
+    - name: "medium"
+      profile: "regular"
+      systemStressor: "medium"

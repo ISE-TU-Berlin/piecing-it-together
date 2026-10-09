@@ -1,0 +1,43 @@
+experiment:
+  types: 
+    - name: "baseline"
+      description: "Synthetic microservice with some additional dependecies deployed in docker"
+    - name: "wasmtime"
+      description: "Synthetic microservice running in wasmtime with some additional dependecies"
+  workload_profiles:
+    - name: "heavy"
+      total_requests: -1
+      parallel_connections: 10
+      requests_per_connection: 20
+      timeout: 1.0
+    - name: "off"
+      total_requests: 0
+      parallel_connections: 0
+      requests_per_connection: 0
+      timeout: 0.0
+  workload_set:
+    - name: "compute-stress"
+      profile: "heavy"
+      systemStressor: "medium"
+      serviceStressor: "compute"
+      scale: [10,0, 30]
+    - name: "network-stress"
+      profile: "heavy"
+      systemStressor: "medium"
+      serviceStressor: "network"
+      scale: [10,0, 30]
+    - name: "data-stress"
+      profile: "heavy"
+      systemStressor: "medium"
+      serviceStressor: "data"
+      scale: [10,0, 30]
+    - name: "overhead-cleanroom"
+      profile: "off"
+      systemStressor: "none"
+      serviceStressor: "none"
+      scale: [10,0, 30]
+    - name: "overhead-noisy-neighbor"
+      profile: "off"
+      systemStressor: "medium"
+      serviceStressor: "none"
+      scale: [10,0, 30]

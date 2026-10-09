@@ -1,0 +1,12 @@
+__pycache__
+kirin
+kuberentes.yaml
+*.wasm
+*.tar
+client
+*reports/
+run_kubernetes.yaml
+isolated_services/run_wasi.yaml
+.DS_Store
+environment.yaml
+enviroment.yaml

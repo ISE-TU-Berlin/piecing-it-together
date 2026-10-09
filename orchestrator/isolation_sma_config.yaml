@@ -1,0 +1,329 @@
+sma:
+  version: 0.2.1
+  services:
+    prometheus:
+      address: http://<prometheus-host>:30090
+  observation:
+    mode: trigger
+    window:
+      left: 60s
+      right: 60s
+    max_duration: 480s
+    targets:
+      - name: suo
+        namespace: demo
+    environment:
+      collector: prometheus
+  measurements:
+
+    # ── NODE: POWER ─────────────────────────────────────────────────────────
+    # node!="cp1" selects all SUT nodes (sut1, sut2, ...) without hardcoding names.
+
+    - node_power_scaph_watts:
+        type: raw
+        layer: node
+        unit: watts
+        query: scaph_host_power_microwatts{node!="cp1"} / 1e6
+        step: 10
+        target:
+          - all
+
+    - node_power_kepler_watts:
+        type: raw
+        layer: node
+        unit: watts
+        # zone=package+dram: package=full CPU socket (includes core+uncore), dram=DRAM separately.
+        # Summing all four zones would double-count core+uncore into package.
+        query: sum by (node_name) (kepler_node_cpu_watts{node_name!="cp1", zone=~"package|dram"})
+        step: 10
+        target:
+          - all
+
+    # ── NODE: CPU / MEMORY / DISK / NETWORK ─────────────────────────────────
+    # All counters are raw. Notebook computes increase() for totals or diff()/step for rates.
+
+    - node_cpu_seconds:
+        type: raw
+        layer: node
+        unit: cpu_time_seconds
+        # mode dimension preserved: notebook can isolate steal (stress-ng validation),
+        # idle, iowait, user, system as needed.
+        query: sum by (node, mode) (node_cpu_seconds_total{node!="cp1"})
+        step: 10
+        target:
+          - all
+
+    - node_memory_usage_bytes:
+        type: raw
+        layer: node
+        unit: bytes
+        query: sum by (node) (node_memory_MemTotal_bytes{node!="cp1"} - node_memory_MemAvailable_bytes{node!="cp1"})
+        step: 10
+        target:
+          - all
+
+    - node_disk_io_bytes:
+        type: raw
+        layer: node
+        unit: bytes
+        query: sum by (node) (
+                node_disk_read_bytes_total{node!="cp1"} +
+                node_disk_written_bytes_total{node!="cp1"}
+              )
+        step: 10
+        target:
+          - all
+
+    - node_network_bytes:
+        type: raw
+        layer: node
+        unit: bytes
+        # Physical NIC only (enp0s31f6). Excludes all virtual/overlay/pod-veth interfaces.
+        # vxlan.calico is the Calico VXLAN tunnel and is measured separately below.
+        query: sum by (node) (
+                node_network_receive_bytes_total{node!="cp1", device!~"lo|veth.*|cali.*|flannel.*|vxlan.calico|kube-ipvs.*|docker.*|br-.*|nodelocaldns"} +
+                node_network_transmit_bytes_total{node!="cp1", device!~"lo|veth.*|cali.*|flannel.*|vxlan.calico|kube-ipvs.*|docker.*|br-.*|nodelocaldns"}
+              )
+        step: 10
+        target:
+          - all
+
+    - node_overlay_network_bytes:
+        type: raw
+        layer: node
+        unit: bytes
+        # Calico VXLAN tunnel (vxlanMode=Always, ipipMode=Never).
+        # Captures inter-node pod-to-pod traffic only, separate from physical NIC view.
+        query: sum by (node) (
+                node_network_receive_bytes_total{node!="cp1", device="vxlan.calico"} +
+                node_network_transmit_bytes_total{node!="cp1", device="vxlan.calico"}
+              )
+        step: 10
+        target:
+          - all
+
+    # ── PLATFORM OVERHEAD ───────────────────────────────────────────────────
+    # process-exporter groups. instance label differentiates sut1/sut2/... automatically.
+    # Requires runc-shim group defined before containerd in process-exporter.yml so
+    # containerd-shim-runc-v2 processes are captured there, not under containerd.
+
+    - platform_overhead_cpu_seconds:
+        type: raw
+        layer: node
+        unit: cpu_time_seconds
+        query: sum by (groupname, instance) (
+                namedprocess_namegroup_cpu_seconds_total{
+                  groupname=~"kubelet|containerd|runc-shim|kube-proxy|flannel"
+                }
+              )
+        step: 10
+        target:
+          - all
+
+    - platform_overhead_memory_bytes:
+        type: raw
+        layer: node
+        unit: bytes
+        query: sum by (groupname, instance) (
+                namedprocess_namegroup_memory_bytes{
+                  groupname=~"kubelet|containerd|runc-shim|kube-proxy|flannel",
+                  memtype="resident"
+                }
+              )
+        step: 10
+        target:
+          - all
+
+    # ── POD: CPU / MEMORY / NETWORK / DISK ──────────────────────────────────
+    # cAdvisor metrics, scoped to demo namespace via ${namespace} interpolation.
+    # All counters raw; namespace filter already restricts to SUT-scheduled pods.
+
+    - pod_cpu_seconds:
+        type: raw
+        layer: pod
+        unit: cpu_time_seconds
+        query: sum by (id,pod) (container_cpu_usage_seconds_total{namespace="${namespace}"})
+        step: 10
+        target:
+          - suo
+
+    - pod_memory_bytes:
+        type: raw
+        layer: pod
+        unit: bytes
+        query: sum by (id,pod) (container_memory_working_set_bytes{namespace="${namespace}"})
+        step: 10
+        target:
+          - suo
+
+    - pod_network_bytes:
+        type: raw
+        layer: pod
+        unit: bytes
+        query: sum by (id,pod) (
+                container_network_receive_bytes_total{namespace="${namespace}"} +
+                container_network_transmit_bytes_total{namespace="${namespace}"}
+              )
+        step: 10
+        target:
+          - suo
+
+    - pod_disk_io_bytes:
+        type: raw
+        layer: pod
+        unit: bytes
+        query: sum by (id,pod) (
+                container_fs_reads_bytes_total{namespace="${namespace}"} +
+                container_fs_writes_bytes_total{namespace="${namespace}"}
+              )
+        step: 10
+        target:
+          - suo
+
+    - pod_cpu_throttled_seconds:
+        type: raw
+        layer: pod
+        unit: cpu_time_seconds
+        query: sum by (pod) (container_cpu_cfs_throttled_seconds_total{namespace="${namespace}"})
+        step: 10
+        target:
+          - suo
+
+    - pod_cpu_stalled_seconds:
+        type: raw
+        layer: pod
+        unit: cpu_time_seconds
+        # PSI stalled = no task in cgroup could progress; signals hard CPU contention.
+        query: sum by (id,pod) (container_pressure_cpu_stalled_seconds_total{namespace="${namespace}"})
+        step: 10
+        target:
+          - suo
+
+    - pod_restarts:
+        type: raw
+        layer: pod
+        unit: count
+        query: sum by (uid,pod) (kube_pod_container_status_restarts_total{namespace="${namespace}"})
+        step: 10
+        target:
+          - suo
+
+    - pod_oom_events:
+        type: raw
+        layer: pod
+        unit: count
+        query: sum by (id,pod) (container_oom_events_total{namespace="${namespace}"})
+        step: 10
+        target:
+          - suo
+
+    # ── POD: ENERGY ─────────────────────────────────────────────────────────
+    # Kepler, scoped to demo namespace.
+    # pod_energy_joules is a counter (raw) → notebook computes increase() for total energy.
+    # pod_power_watts is a gauge → gives instantaneous power trace over the window.
+
+    - pod_energy_joules:
+        type: raw
+        layer: pod
+        unit: joules
+        query: sum by (pod_id,pod_name) (
+                kepler_pod_cpu_joules_total{pod_namespace="${namespace}", zone=~"package|dram"}
+              )
+        step: 10
+        target:
+          - suo
+
+    - pod_power_watts:
+        type: raw
+        layer: pod
+        unit: watts
+        query: sum by (pod_id,pod_name) (
+                kepler_pod_cpu_watts{pod_namespace="${namespace}", zone=~"package|dram"}
+              )
+        step: 10
+        target:
+          - suo
+
+    # ── RUNTIME SHIM METRICS ────────────────────────────────────────────────
+    # Symmetric wasm-shim vs runc-shim coverage via process-exporter + Scaphandre.
+    # instance label in namedprocess queries distinguishes sut1/sut2/...
+
+    - wasm_shim_cpu_seconds:
+        type: raw
+        layer: pod
+        unit: cpu_time_seconds
+        query: sum by (groupname, instance) (
+                namedprocess_namegroup_cpu_seconds_total{groupname="wasm-shim"}
+              )
+        step: 10
+        target:
+          - all
+
+    - wasm_shim_memory_bytes:
+        type: raw
+        layer: pod
+        unit: bytes
+        query: sum by (groupname, instance) (
+                namedprocess_namegroup_memory_bytes{groupname="wasm-shim", memtype="resident"}
+              )
+        step: 10
+        target:
+          - all
+
+    - wasm_shim_power_watts:
+        type: raw
+        layer: pod
+        unit: watts
+        query: scaph_process_power_consumption_microwatts{
+                cmdline=~".*containerd-shim-wasmtime-v1.*namespacek8s.*"
+              } / 1e6
+        step: 10
+        target:
+          - all
+    
+    - wasm_shim_power_watts:
+        type: raw
+        layer: pod
+        unit: watts
+        query: sum by(container_id,kubernetes_pod_name) (scaph_process_power_consumption_microwatts{cmdline=~".*containerd-shim-wasmtime-v1.*",container_id!="",kubernetes_pod_namespace=~"${namespace}"}) / 1e6
+        step: 10
+        target:
+          - all
+
+
+    - runc_shim_cpu_seconds:
+        type: raw
+        layer: pod
+        unit: cpu_time_seconds
+        query: sum by (groupname, instance) (
+                namedprocess_namegroup_cpu_seconds_total{groupname="runc-shim"}
+              )
+        step: 10
+        target:
+          - all
+
+    - runc_shim_memory_bytes:
+        type: raw
+        layer: pod
+        unit: bytes
+        query: sum by (groupname, instance) (
+                namedprocess_namegroup_memory_bytes{groupname="runc-shim", memtype="resident"}
+              )
+        step: 10
+        target:
+          - all
+
+    - runc_shim_power_watts:
+        type: raw
+        layer: pod
+        unit: watts
+        query: scaph_process_power_consumption_microwatts{
+                cmdline=~".*containerd-shim-runc-v2.*namespacek8s.*"
+              } / 1e6
+        step: 10
+        target:
+          - all
+  report:
+    format: csv
+    location: isolation_reports/run_${startTime}_${runHash}/  # Can use ${runHash}, ${startTime}, and any run_extras keys
+    filename: "${name}.csv"  # Must NOT contain path separators - ${name} is mandatory

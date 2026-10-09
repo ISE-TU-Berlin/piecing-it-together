@@ -1,0 +1,9 @@
+experiment:
+  build_ssh_hostname: "<control-plane>"
+  sut_ssh_hostnames:
+    - "<baremetal-node>"
+  sut_platform: "linux/amd64"
+  skaffold_path: "/home/debian/rust-in-pieces/"
+  wasm_service_path: "/home/debian/rust-in-pieces/"
+  namespace: "demo"
+  image_reposetory: "<repo>/<user>/docker-images"
